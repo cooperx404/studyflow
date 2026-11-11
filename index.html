@@ -82,6 +82,7 @@ footer{text-align:center;color:#8290ae;font-size:12px;padding:0 0 25px}
   <div class="timer-status" id="status" aria-live="polite">آماده‌ای؟ یک کار انتخاب کن و شروع کن.</div>
   <div class="controls"><button class="btn primary" id="start">شروع تمرکز</button><button class="btn secondary" id="reset">بازنشانی</button><button class="btn secondary" id="skip">رد کردن</button></div>
   <div class="settings"><label><input type="checkbox" id="autoBreak"> شروع خودکار استراحت</label><label><input type="checkbox" id="autoFocus"> شروع خودکار تمرکز بعد از استراحت</label><label><input type="checkbox" id="sound" checked> صدای پایان</label></div>
+  <div style="margin-top:12px"><button class="tab" id="enableNotifications" type="button">🔔 فعال‌کردن اعلان‌ها</button><span id="notificationStatus" style="font-size:12px;color:var(--muted);margin-right:8px">برای دریافت اعلان پایان تایمر</span></div>
   <div class="custom" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:17px;color:var(--muted);font-size:13px"><label for="customMin">زمان دلخواه (دقیقه)</label><input id="customMin" type="number" min="1" max="180" value="25" style="width:78px"><button class="tab" id="applyCustom">اعمال</button></div>
  </section>
  <aside class="side">
@@ -116,7 +117,25 @@ function stop(){if(timer)clearInterval(timer);timer=null;running=false;deadline=
 function beep(){if(!$('sound').checked||muted)return;try{let C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=740;g.gain.value=.12;o.start();o.stop(c.currentTime+.55)}catch(e){}}
 function saveStopwatchSegment(){if(mode!=='stopwatch')return;const seconds=Math.max(0,stopwatchElapsed-stopwatchLoggedSeconds);if(seconds<1)return;data.sessions.unshift({date:dateKey(),minutes:seconds/60,seconds:seconds,at:new Date().toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'}),kind:'stopwatch'});data.sessions=data.sessions.slice(0,100);stopwatchLoggedSeconds=stopwatchElapsed;save();showToast('زمان کرنومتر به آمار مطالعه اضافه شد.')}
 function setMode(m,custom=null){if(mode==='stopwatch'){if(running){stopwatchElapsed=Math.floor((Date.now()-stopwatchStartedAt)/1000)}saveStopwatchSegment()}stop();mode=m;stopwatchElapsed=0;stopwatchStartedAt=null;stopwatchLoggedSeconds=0;total=m==='stopwatch'?0:(custom||durations[m])*60;left=total;document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));document.querySelectorAll('[data-min]').forEach(b=>b.classList.toggle('active',m==='focus'&&Number(b.dataset.min)===total/60));$('modeLabel').textContent=m==='focus'?'زمان تمرکز':m==='short'?'استراحت کوتاه':m==='long'?'استراحت بلند':'زمان سپری‌شده';$('start').textContent=m==='stopwatch'?'شروع کرنومتر':m==='focus'?'شروع تمرکز':'شروع استراحت';$('skip').hidden=m==='stopwatch';document.querySelector('.preset').style.opacity=m==='focus'?'1':'.45';$('customMin').disabled=m!=='focus';$('applyCustom').disabled=m!=='focus';$('status').textContent=m==='stopwatch'?'برای اندازه‌گیری زمان، شروع را بزن.':'آماده‌ای؟ شروع کن!';renderClock()}
-function finish(){stop();left=0;renderClock();beep();if(mode==='focus'){data.sessions.unshift({date:dateKey(),minutes:total/60,at:new Date().toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})});data.sessions=data.sessions.slice(0,100);save();$('status').textContent='آفرین! جلسه تمرکزت ثبت شد 🎉';if($('autoBreak').checked)setMode(data.sessions.filter(s=>s.date===dateKey()).length%4===0?'long':'short')}else{$('status').textContent='استراحت تموم شد؛ آماده ادامه‌ای؟';if($('autoFocus').checked)setMode('focus')}}
+async function enableNotifications(){
+ if(!('Notification' in window)){ $('notificationStatus').textContent='این مرورگر از اعلان پشتیبانی نمی‌کند.'; return; }
+ if(!window.isSecureContext){ $('notificationStatus').textContent='برای اعلان، سایت باید با HTTPS باز شود.'; return; }
+ try{
+  const permission=await Notification.requestPermission();
+  $('notificationStatus').textContent=permission==='granted'?'اعلان‌ها فعال شدند ✓':permission==='denied'?'اجازه اعلان در تنظیمات مرورگر مسدود شده است.':'اجازه اعلان داده نشد.';
+  if(permission==='granted' && !document.hidden) new Notification('StudyFlow', {body:'اعلان پایان تایمر فعال شد 🔔'});
+ }catch(e){ $('notificationStatus').textContent='فعال‌سازی اعلان ناموفق بود.'; }
+}
+$('enableNotifications').addEventListener('click',enableNotifications);
+function sendTimerNotification(title,body){
+ if('Notification' in window && Notification.permission==='granted'){
+  try{ new Notification(title,{body,tag:'studyflow-timer-finished'}); }catch(e){}
+ }
+}
+if('Notification' in window){
+ $('notificationStatus').textContent=Notification.permission==='granted'?'اعلان‌ها فعال هستند ✓':Notification.permission==='denied'?'اجازه اعلان در تنظیمات مرورگر مسدود است.':'برای دریافت اعلان، دکمه را بزن.';
+}
+function finish(){stop();left=0;renderClock();beep();if(mode==='focus'){sendTimerNotification('زمان تمرکز تمام شد 🎉','آفرین! جلسه مطالعه‌ات ثبت شد. وقت استراحت است.')}else{sendTimerNotification('زمان استراحت تمام شد','آماده‌ای به مطالعه برگردی؟')}if(mode==='focus'){data.sessions.unshift({date:dateKey(),minutes:total/60,at:new Date().toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})});data.sessions=data.sessions.slice(0,100);save();$('status').textContent='آفرین! جلسه تمرکزت ثبت شد 🎉';if($('autoBreak').checked)setMode(data.sessions.filter(s=>s.date===dateKey()).length%4===0?'long':'short')}else{$('status').textContent='استراحت تموم شد؛ آماده ادامه‌ای؟';if($('autoFocus').checked)setMode('focus')}}
 function tick(){left=Math.max(0,Math.ceil((deadline-Date.now())/1000));renderClock();if(left===0)finish()}
 $('start').onclick=()=>{if(running){if(mode==='stopwatch'){stopwatchElapsed=Math.floor((Date.now()-stopwatchStartedAt)/1000);stop();saveStopwatchSegment()}else stop();$('status').textContent='متوقف شد.';renderClock();return}if(mode==='stopwatch'){running=true;stopwatchStartedAt=Date.now()-stopwatchElapsed*1000;$('start').textContent='توقف';$('status').textContent='کرنومتر در حال شمارش است…';timer=setInterval(()=>{stopwatchElapsed=Math.floor((Date.now()-stopwatchStartedAt)/1000);renderClock()},200);return}if(left<=0)left=total;running=true;deadline=Date.now()+left*1000;$('start').textContent='توقف';$('status').textContent=mode==='focus'?'در حال تمرکز…':'زمان استراحت';timer=setInterval(tick,200);tick()};
 window.addEventListener('pagehide',()=>{if(mode==='stopwatch'&&running){stopwatchElapsed=Math.max(stopwatchElapsed,Math.floor((Date.now()-stopwatchStartedAt)/1000));saveStopwatchSegment();}});
@@ -152,4 +171,4 @@ $('contactForm').onsubmit=e=>{e.preventDefault();let name=$('sender').value.trim
 $('year').textContent=new Date().getFullYear();renderStats();renderHistory();renderTasks();renderPlanet();setMode('focus');
 </script>
 </body>
-</html>
+                                                                                                                                                                                                                                                                                                         </html>
